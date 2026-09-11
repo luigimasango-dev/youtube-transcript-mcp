@@ -1,102 +1,96 @@
 # youtube-transcript-mcp
 
-An MCP server that gives a coding agent the ability to read and search YouTube
-video transcripts. No API key, no Google account, nothing to sign up for. It
-pulls captions through YouTube's public endpoints and adds one small thing that
-a raw transcript dump does not give you: chapter summaries.
+MCP server that lets coding agents read, search and chapter-summarize YouTube transcripts. No API key needed.
 
-This started as a small tool for my own use. I kept hitting conversations that
-contained a YouTube link and needed to know what the video actually said, and
-re-pasting transcripts around was wasting time. It became a reusable server so
-that anything running on the Model Context Protocol could just ask.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![CI](https://github.com/luigimasango-dev/youtube-transcript-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/luigimasango-dev/youtube-transcript-mcp/actions/workflows/ci.yml)
+[![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org/downloads/)
 
-## What it does
+![get_video_metadata call and result](docs/demo.png)
 
-Four tools.
+## Quick start
 
-- `get_transcript(video_url_or_id, languages=["en"], include_timestamps=False)`
-  grabs the full transcript as plain text. It accepts a full YouTube URL
-  (watch?v=, youtu.be, /embed/, /shorts/, /live/) or a bare 11-character video
-  ID.
+Requires Python 3.11+ and [uv](https://docs.astral.sh/uv/). Tested 2026-09-11
+from a fresh clone on Windows 11 (POSIX same, minus `py`):
 
-- `get_video_metadata(video_url_or_id)` returns title, channel name, channel
-  URL and thumbnail via YouTube's no-auth oEmbed endpoint. It deliberately does
-  not return upload date or full description, because those need an official
-  Data API key and the whole point here is that you do not need one.
-
-- `search_transcript(video_url_or_id, query, languages=["en"])` finds the
-  segments matching a keyword or phrase, case-insensitive, each with a [mm:ss]
-  timestamp so the model can point at where in the video something was said.
-
-- `summarize_chapters(video_url_or_id, gap_seconds=4.0, min_chunk_seconds=45.0,
-  languages=["en"])` splits the transcript into rough time-blocked chunks at
-  natural pauses and returns them so an agent can summarize section by section
-  instead of swallowing one giant blob. It is a heuristic, not YouTube's real
-  chapter data.
-
-All tools return a plain string, including errors (for example "Error:
-captions are disabled for this video"). No exceptions surface to the calling
-agent, and no stack traces leak out.
-
-## What it deliberately does not do
-
-- It does not work on videos with captions disabled, private or unavailable
-  videos, or live streams without captions. It says so instead of guessing.
-- It does not depend on the YouTube Data API. You cannot get upload dates or
-  full descriptions without one, by design.
-- It does not cache. Two calls against the same video re-fetch both times.
-  Fine for the tool's actual use. Add caching if you ever need it at volume.
-
-## Setup
-
-Requires Python 3.11+ and uv.
-
-```
+```powershell
+git clone https://github.com/luigimasango-dev/youtube-transcript-mcp.git
+cd youtube-transcript-mcp
 uv sync
-```
-
-Run it standalone to confirm it starts:
-
-```
 uv run server.py
 ```
 
 It sits waiting for MCP stdio input, so it will appear to do nothing until a
 client connects. That is normal. Ctrl+C to exit.
 
-## Registering with an MCP client
-
-Add it to your client's MCP settings. The server is invoked with stdio, so the
-configuration is a command line. Using Claude CLI as the example:
+Register it with an MCP client (Claude CLI example):
 
 ```
-claude mcp add youtube-transcript -- uv --directory /absolute/path/to/youtube-transcript-mcp run server.py
+claude mcp add youtube-transcript -- uv --directory C:\Dev\youtube-transcript-mcp run server.py
 ```
 
-Or in the JSON config:
+Or in JSON config:
 
 ```json
 {
   "mcpServers": {
     "youtube-transcript": {
       "command": "uv",
-      "args": ["--directory", "/absolute/path/to/youtube-transcript-mcp", "run", "server.py"]
+      "args": ["--directory", "C:\\Dev\\youtube-transcript-mcp", "run", "server.py"]
     }
   }
 }
 ```
 
-## Notes earned the hard way
+## How it works
 
-- Only videos with captions (auto-generated or manual) work. A video without
-  captions returns a clear error, which is a deliberate choice: an empty result
-  reads like a quiet failure, an error names it.
-- The language list matters. `languages=["en"]` gets the English track when one
-  exists. If a channel uploads in another language only, pass that code.
-- Pin `mcp>=1.28.1` but stay below 2.0. mcp 2.x renamed
-  `mcp.server.fastmcp` and the import breaks silently at server start. You want
-  the version that actually loads.
+This started as a small tool for my own use. I kept hitting conversations
+that contained a YouTube link and needed to know what the video actually
+said, and re-pasting transcripts around was wasting time. It became a
+reusable server so that anything running on the Model Context Protocol
+could just ask.
+
+Captions come through YouTube's public endpoints; metadata comes through
+YouTube's no-auth oEmbed endpoint. No API key, no Google account, nothing
+to sign up for.
+
+## Tools
+
+| Tool | Purpose | Key args |
+|---|---|---|
+| `get_transcript` | Full transcript as plain text. Accepts watch, youtu.be, embed, shorts, live URLs or a bare 11-char video ID | `video_url_or_id`, `languages=["en"]`, `include_timestamps=False` |
+| `get_video_metadata` | Title, channel name, channel URL and thumbnail via oEmbed (no upload date or description — those need a Data API key) | `video_url_or_id` |
+| `search_transcript` | Segments matching a keyword/phrase, case-insensitive, each with a `[mm:ss]` timestamp | `video_url_or_id`, `query`, `languages=["en"]` |
+| `summarize_chapters` | Splits the transcript into rough time-blocked chunks at natural pauses for section-by-section summarising. A heuristic, not YouTube's real chapter data | `video_url_or_id`, `gap_seconds=4.0`, `min_chunk_seconds=45.0`, `languages=["en"]` |
+
+All tools return a plain string, including errors (for example "Error:
+captions are disabled for this video"). No exceptions surface to the calling
+agent, and no stack traces leak out.
+
+## Limitations
+
+- Only videos with captions (auto-generated or manual) work. Private videos,
+  caption-less videos and live streams without captions return a clear error
+  instead of a guess.
+- No upload dates or full descriptions without a YouTube Data API key, by
+  design.
+- No caching. Two calls against the same video re-fetch both times. Fine for
+  the tool's actual use; add caching if you ever need it at volume.
+- The language list matters. `languages=["en"]` gets the English track when
+  one exists. If a channel uploads in another language only, pass that code.
+
+## Development
+
+```powershell
+uv sync
+uv run --with pytest python -m pytest tests/ -v
+```
+
+The suite launches the real server over stdio, calls `tools/list`, and
+asserts the four tool names are present. Pin `mcp>=1.28.1` but stay below
+2.0 — mcp 2.x renamed `mcp.server.fastmcp` and the import breaks at server
+start.
 
 ## License
 
-MIT. See LICENSE.
+MIT. See [LICENSE](LICENSE).
